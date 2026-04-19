@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rabbit Hole Explorer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1e293b; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #475569; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #64748b; 
+        }
+        
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .topic-card {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .topic-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+            border-color: #6366f1; /* Indigo 500 */
+        }
+
+        /* Modal Animation */
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        @keyframes slideUp {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        .modal-overlay { animation: fadeIn 0.2s ease-out forwards; }
+        .modal-content { animation: slideUp 0.3s ease-out forwards; }
+        
+        /* Shimmer loading effect */
+        .shimmer {
+            background: #334155;
+            background-image: linear-gradient(to right, #334155 0%, #475569 20%, #334155 40%, #334155 100%);
+            background-repeat: no-repeat;
+            background-size: 800px 100%; 
+            animation-duration: 1.5s;
+            animation-fill-mode: forwards; 
+            animation-iteration-count: infinite;
+            animation-name: placeholderShimmer;
+            animation-timing-function: linear;
+        }
+        @keyframes placeholderShimmer {
+            0% { background-position: -468px 0; }
+            100% { background-position: 468px 0; }
+        }
+    </style>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        gray: {
+                            900: '#0f172a',
+                            800: '#1e293b',
+                            700: '#334155',
+                            600: '#475569',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-gray-900 text-gray-100 font-sans h-screen overflow-hidden flex selection:bg-indigo-500 selection:text-white">
+
+    <!-- Mobile Sidebar Backdrop -->
+    <div id="mobile-backdrop" class="fixed inset-0 bg-black/50 z-20 hidden md:hidden glass-panel" onclick="toggleSidebar()"></div>
+
+    <!-- Sidebar -->
+    <aside id="sidebar" class="fixed md:static inset-y-0 left-0 w-72 bg-gray-800 border-r border-gray-700 flex flex-col z-30 transform -translate-x-full md:translate-x-0 transition-transform duration-300 ease-in-out h-full">
+        <div class="p-5 border-b border-gray-700 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-lg bg-indigo-500 flex items-center justify-center text-white font-bold shadow-lg shadow-indigo-500/30">
+                    <i data-lucide="book-open"></i>
+                </div>
+                <h1 class="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-cyan-400">Rabbit Hole</h1>
+            </div>
+            <button onclick="toggleSidebar()" class="md:hidden text-gray-400 hover:text-white">
+                <i data-lucide="x"></i>
+            </button>
+        </div>
+        
+        <div class="p-4">
+            <button onclick="getRandomTopic()" class="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white py-2.5 px-4 rounded-xl font-medium transition-all shadow-lg shadow-indigo-900/20 active:scale-95">
+                <i data-lucide="dices" class="w-5 h-5"></i>
+                Random Topic
+            </button>
+        </div>
+
+        <nav class="flex-1 overflow-y-auto p-4 space-y-1" id="category-nav">
+            <!-- Categories injected here via JS -->
+        </nav>
+        
+        <div class="p-4 border-t border-gray-700 text-xs text-gray-500 text-center">
+            Click any topic to fetch deeper info.
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="flex-1 flex flex-col h-full min-w-0 bg-gray-900 relative">
+        <!-- Header -->
+        <header class="h-16 border-b border-gray-800 bg-gray-900/80 backdrop-blur-md flex items-center justify-between px-4 sticky top-0 z-10">
+            <div class="flex items-center gap-3">
+                <button onclick="toggleSidebar()" class="md:hidden text-gray-400 hover:text-white p-1 rounded-md hover:bg-gray-800">
+                    <i data-lucide="menu"></i>
+                </button>
+                <h2 id="current-category-title" class="text-lg font-semibold text-gray-200 truncate">All Topics</h2>
+            </div>
+            
+            <!-- Search Bar -->
+            <div class="relative w-48 sm:w-64 max-w-md">
+                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <i data-lucide="search" class="w-4 h-4 text-gray-500"></i>
+                </div>
+                <input type="text" id="search-input" placeholder="Search titles & descriptions..." class="block w-full pl-10 pr-3 py-2 border border-gray-700 rounded-full leading-5 bg-gray-800 text-gray-300 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition-all focus:bg-gray-900">
+            </div>
+        </header>
+
+        <!-- Topic Grid -->
+        <div class="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8" id="main-scroll-area">
+            <div id="topics-grid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-5 auto-rows-max">
+                <!-- Topics injected here via JS -->
+            </div>
+            
+            <div id="no-results" class="hidden flex-col items-center justify-center py-20 text-gray-500">
+                <i data-lucide="ghost" class="w-16 h-16 mb-4 text-gray-600"></i>
+                <p class="text-lg">No mysteries found here.</p>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modal for Wikipedia Summary -->
+    <div id="info-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
+        <div class="modal-overlay fixed inset-0 bg-gray-900/80 backdrop-blur-sm" onclick="closeModal()"></div>
+        <div class="modal-content relative bg-gray-800 rounded-2xl border border-gray-700 shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
+            
+            <!-- Modal Header -->
+            <div class="px-6 py-4 border-b border-gray-700 flex justify-between items-start bg-gray-800/50">
+                <h3 id="modal-title" class="text-2xl font-bold text-white pr-8 leading-tight"></h3>
+                <button onclick="closeModal()" class="absolute top-4 right-4 text-gray-400 hover:text-white p-1 rounded-full hover:bg-gray-700 transition-colors">
+                    <i data-lucide="x" class="w-6 h-6"></i>
+                </button>
+            </div>
+            
+            <!-- Modal Body (Loading State) -->
+            <div id="modal-loading" class="p-6 space-y-4">
+                <div class="h-4 shimmer rounded w-3/4"></div>
+                <div class="h-4 shimmer rounded w-full"></div>
+                <div class="h-4 shimmer rounded w-5/6"></div>
+                <div class="h-4 shimmer rounded w-full"></div>
+                <div class="h-4 shimmer rounded w-2/3"></div>
+            </div>
+
+            <!-- Modal Body (Content State) -->
+            <div id="modal-content-area" class="hidden p-6 overflow-y-auto custom-scrollbar flex-1">
+                <div class="prose prose-invert max-w-none">
+                    <p id="modal-description" class="text-gray-300 leading-relaxed text-lg"></p>
+                </div>
+            </div>
+
+            <!-- Modal Body (Error State) -->
+            <div id="modal-error" class="hidden p-10 flex flex-col items-center justify-center text-center">
+                <i data-lucide="file-question" class="w-12 h-12 text-gray-500 mb-3"></i>
+                <p class="text-gray-400">Could not pull information from Wikipedia automatically.</p>
+                <p class="text-sm text-gray-500 mt-2">Try searching for it directly using the button below.</p>
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="px-6 py-4 border-t border-gray-700 bg-gray-900/50 flex justify-end gap-3">
+                <button onclick="closeModal()" class="px-4 py-2 rounded-lg text-gray-300 hover:text-white hover:bg-gray-700 transition-colors">
+                    Close
+                </button>
+                <a id="modal-link" href="#" target="_blank" class="flex items-center gap-2 px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-medium transition-colors shadow-lg shadow-indigo-900/20">
+                    Dive Deeper
+                    <i data-lucide="external-link" class="w-4 h-4"></i>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Data and Application Logic -->
+    <script>
+        // --- Data Structure with Descriptions ---
+        const database = {
+            "General": [
+                { title: "Chair theory", desc: "The philosophical and semantic inquiry into the exact definition and essence of what makes a 'chair'." },
+                { title: "Roko's Basilisk", desc: "A thought experiment about an omnipotent future AI that retroactively punishes those who didn't help create it." },
+                { title: "Transhumanism", desc: "The movement aiming to enhance the human condition and intellect through advanced cybernetic and genetic technologies." },
+                { title: "Ship of Theseus", desc: "A classic paradox questioning whether an object remains the same if all of its original components are replaced." },
+                { title: "Pygmalion effect", desc: "A psychological phenomenon where high expectations placed upon people lead directly to improved performance." },
+                { title: "Bioluminescence", desc: "The stunning biochemical emission of light by living organisms, such as deep-sea creatures and fireflies." },
+                { title: "Platypus principle", desc: "The idea that some entities are so unique they simply defy standard systemic categorization entirely." },
+                { title: "Panopticon effect", desc: "The behavioral change caused by the constant, unverified feeling that you might be watched at any moment." },
+                { title: "The Fermi Paradox", desc: "The apparent contradiction between the high mathematical probability of alien life and the complete lack of evidence for it." },
+                { title: "The overview effect", desc: "A profound cognitive shift reported by astronauts when viewing the fragile Earth from the void of space." },
+                { title: "Operation Paperclip", desc: "The secret post-WWII US intelligence program that brought former Nazi scientists to America to work on rockets." },
+                { title: "Analects of Confucius", desc: "An ancient Chinese text containing the foundational philosophical teachings and ideas attributed to Confucius." },
+                { title: "The Voynich Manuscript", desc: "A bizarre, highly illustrated 15th-century codex written in an unknown, completely undeciphered writing system." },
+                { title: "Quantum Entanglement", desc: "A physical phenomenon where separated particles remain intimately connected, reacting to each other instantly." },
+                { title: "Green children of Woolpit", desc: "A 12th-century English legend regarding two mysterious children appearing in a village with unusually green skin." },
+                { title: "Time dilation and relativity", desc: "The physics principle that time moves at different speeds depending on an object's velocity or gravitational field." },
+                { title: "The Dyatlov Pass incident", desc: "The still-unsolved mystery of nine Soviet hikers who died under bizarre, inexplicable circumstances in 1959." },
+                { title: "The Antikythera Mechanism", desc: "An ancient Greek hand-powered orrery, widely considered by historians to be the world's first analog computer." },
+                { title: "Lost Civilisations and Myths", desc: "Fascinating historical legends of forgotten societies, sunken continents like Atlantis, and hidden empires." },
+                { title: "Political Bias in Cartography", desc: "How world maps have historically manipulated borders, sizes, and orientations to serve geopolitical motives." },
+                { title: "Boltzmann brain hypothesis", desc: "The terrifying idea that a single, conscious brain is more likely to spontaneously form in chaos than a whole universe." },
+                { title: "Cognitive dissonance theory", desc: "The psychological discomfort a person experiences by holding two conflicting beliefs, values, or attitudes." },
+                { title: "Baader-Meinhof phenomenon", desc: "The 'frequency illusion' where a concept or word you just learned suddenly seems to appear everywhere you look." },
+                { title: "Legends of Werewolves in Europe", desc: "The historical folklore, mass hysteria, and literal witch trials regarding humans believed to shapeshift into wolves." },
+                { title: "Entheogens and the origin of religion", desc: "The theory that psychoactive and psychedelic substances in nature inspired early human spiritual experiences." }
+            ],
+            "Philosophy": [
+                { title: "The Experience Machine", desc: "Robert Nozick's thought experiment asking if humans would plug into a machine that simulates perfect pleasure, abandoning reality." },
+                { title: "Philosophical zombies", desc: "Hypothetical beings indistinguishable from normal humans but completely lacking internal conscious experience." },
+                { title: "The Chinese Room argument", desc: "John Searle's argument that a computer running a program cannot truly 'understand' language, only simulate understanding." },
+                { title: "Mereological nihilism", desc: "The radical philosophical position that objects with parts (like a car or a house) do not actually exist." },
+                { title: "The Veil of Ignorance", desc: "A method for determining the morality of political issues by imagining you don't know your own societal status." },
+                { title: "Newcomb's Paradox", desc: "A game theory paradox involving a perfectly accurate predictor of your choices and two boxes containing money." },
+                { title: "The Trolley Problem", desc: "The classic ethical dilemma forcing you to choose between actively sacrificing one person or passively letting many die." },
+                { title: "Eternal recurrence", desc: "Nietzsche's haunting concept that the universe, and all existence, repeats itself infinitely in exact detail." },
+                { title: "Last Thursdayism", desc: "The unfalsifiable idea that the entire universe was created last Thursday, but created with the appearance of being much older." },
+                { title: "The Teletransportation Paradox", desc: "A thought experiment exploring identity: if a teleporter destroys your cells and rebuilds you elsewhere, did you die?" },
+                { title: "Solipsism", desc: "The highly skeptical philosophical idea that only one's own mind is absolutely certain to exist." },
+                { title: "The Simulation Argument", desc: "Nick Bostrom's logical proposition suggesting it is highly probable we are currently living in a computer simulation." },
+                { title: "Theseus' paradox applied to digital identity", desc: "Does a digital file or digital consciousness remain the 'same' entity if it is endlessly copied, moved, and modified?" },
+                { title: "The Utility Monster", desc: "A critique of utilitarianism imagining a being that gets exponentially more pleasure from resources than anyone else." },
+                { title: "Epistemological anarchism", desc: "The view that science operates best without fixed, universal rules, rejecting the idea of a single scientific method." },
+                { title: "Modal realism", desc: "The controversial view that all possible alternate universes and timelines are just as real as our actual world." },
+                { title: "The Repugnant Conclusion", desc: "A paradox where maximizing total global happiness leads to a massive population with lives barely worth living." },
+                { title: "Mu (negative)", desc: "An ancient Zen concept used to 'un-ask' a question, indicating that the premise of the question itself is fundamentally flawed." },
+                { title: "Dialetheism", desc: "The view that there are 'true contradictions' in logic—meaning some statements can be both true and false simultaneously." },
+                { title: "Absurdism", desc: "Albert Camus' philosophy dealing with the conflict between human meaning-seeking and a fundamentally meaningless universe." }
+            ],
+            "Psychology": [
+                { title: "Dunning-Kruger effect", desc: "A cognitive bias where people with low ability at a task drastically overestimate their own competence." },
+                { title: "Capgras delusion", desc: "A terrifying psychological condition where a person believes a loved one has been replaced by an identical impostor." },
+                { title: "Tetris effect", desc: "When people devote so much time to an activity (like a game) that it begins to pattern their thoughts, dreams, and vision." },
+                { title: "Pronoia (psychology)", desc: "The exact opposite of paranoia: the delusional belief that the universe is secretly conspiring to help you." },
+                { title: "Ben Franklin effect", desc: "A psychological phenomenon where doing a favor for someone actually makes you like them more." },
+                { title: "Semantic satiation", desc: "A strange phenomenon where staring at or repeating a word causes it to temporarily lose all meaning to the speaker." },
+                { title: "Doorway effect", desc: "The frustrating tendency to completely forget why you entered a room the moment you walk through the doorway." },
+                { title: "Cryptomnesia", desc: "When a forgotten memory returns without being recognized as a memory, leading to unintentional plagiarism." },
+                { title: "IKEA effect", desc: "A cognitive bias where consumers place a disproportionately high value on products they partially created themselves." },
+                { title: "Apophenia", desc: "The human brain's natural, sometimes erroneous tendency to perceive meaningful patterns between completely unrelated things." },
+                { title: "Zeigarnik effect", desc: "The psychological tendency to remember uncompleted or interrupted tasks much better than completed ones." },
+                { title: "Phantom vibration syndrome", desc: "The modern sensory hallucination of falsely perceiving that your mobile phone is vibrating in your pocket." },
+                { title: "Paris syndrome", desc: "A sense of severe disappointment and psychiatric breakdown exhibited by tourists when Paris doesn't meet expectations." },
+                { title: "Stendhal syndrome", desc: "A psychosomatic condition involving rapid heartbeat and fainting when exposed to objects of great artistic beauty." },
+                { title: "Jerusalem syndrome", desc: "A group of mental phenomena triggered by a visit to Jerusalem, involving religiously themed obsessive ideas." },
+                { title: "Mandela Effect", desc: "A mass-memory phenomenon where a large group of people strongly believes an event occurred when it actually did not." },
+                { title: "Jamais vu", desc: "The eerie opposite of déjà vu: experiencing a completely familiar situation but feeling as if it is totally unfamiliar." },
+                { title: "Mere-exposure effect", desc: "A psychological phenomenon by which people tend to develop a preference for things merely because they are familiar with them." },
+                { title: "Bicameral mentality", desc: "A controversial hypothesis suggesting that ancient human minds lacked internal monologue and perceived thoughts as the 'voices of gods'." },
+                { title: "Cocktail party effect", desc: "The brain's incredible ability to focus auditory attention on a single conversation while filtering out a noisy room." },
+                { title: "Learned helplessness", desc: "Behavior exhibited by a subject after enduring repeated aversive stimuli beyond their control, leading to giving up." },
+                { title: "Flow (psychology)", desc: "The highly productive mental state in which a person performing an activity is fully immersed in a feeling of energized focus." }
+            ],
+            "Unsolved Mysteries": [
+                { title: "Wow! signal", desc: "A strong, unexplained narrowband radio signal received from deep space in 1977 that has never been detected again." },
+                { title: "Zodiac Killer cipher", desc: "The famously complex, partially unsolved cryptograms sent to newspapers by an unidentified serial killer in the 1960s." },
+                { title: "Tunguska event", desc: "A massive 1908 explosion in Siberia that flattened 80 million trees, widely believed to be an asteroid airburst." },
+                { title: "The Hum", desc: "A widespread, persistent, low-frequency humming noise reported globally by people, with no definitively identified source." },
+                { title: "Oakville blobs", desc: "Mysterious, translucent, gelatinous blobs that rained down on a Washington town in 1994, causing illness." },
+                { title: "Dancing plague of 1518", desc: "A bizarre historical event where hundreds of people danced uncontrollably for weeks, some to the point of death." },
+                { title: "Lead Masks Case", desc: "The unexplained 1966 deaths of two Brazilian men found on a hill wearing suits, waterproof coats, and lead eye masks." },
+                { title: "Hessdalen lights", desc: "Unexplained, highly active and frequent light phenomena occurring in a specific valley in Norway." },
+                { title: "Cicada 3301", desc: "A highly complex, internet-based cryptography puzzle that mysteriously recruited codebreakers between 2012 and 2014." },
+                { title: "Phaistos Disc", desc: "An enigmatic ancient disc of fired clay from Crete, covered in symbols that have never been successfully translated." },
+                { title: "Somerton Man", desc: "An unidentified man found dead in 1948 on an Australian beach with a piece of paper reading 'Tamám Shud' in his pocket." },
+                { title: "Mary Celeste", desc: "An American merchant ship discovered adrift and entirely deserted in the Atlantic Ocean in 1872 in pristine condition." },
+                { title: "Amber Room", desc: "A world-famous, priceless chamber decorated entirely in amber and gold leaf, looted and lost during WWII." },
+                { title: "Toynbee tiles", desc: "Hundreds of cryptic messages of unknown origin found embedded into the asphalt of streets across dozens of major cities." },
+                { title: "UVB-76", desc: "A mysterious Russian shortwave radio station that has broadcasted a continuous, monotonous buzzing tone for decades." },
+                { title: "Codex Seraphinianus", desc: "A bizarre, beautiful illustrated encyclopedia of an imaginary world, written entirely in a constructed, unreadable language." },
+                { title: "Erdington murders", desc: "The eerily similar murders of two young women in the exact same English town, precisely 157 years apart." },
+                { title: "Ourang Medan", desc: "A chilling maritime legend about a ghost ship found adrift where the entire crew had mysteriously died with expressions of terror." },
+                { title: "Göbekli Tepe", desc: "A massive Neolithic archaeological site in Turkey that massively predates agriculture and pottery, reshaping history." },
+                { title: "Rongorongo", desc: "A system of glyphs discovered on Easter Island that appears to be an independent invention of writing, yet to be deciphered." },
+                { title: "Bog body", desc: "Human cadavers perfectly, naturally mummified in peat bogs over thousands of years, often bearing signs of violent ritual death." },
+                { title: "Copper Scroll", desc: "A unique Dead Sea Scroll made of metal containing a cryptic treasure map to huge quantities of hidden gold and silver." },
+                { title: "Legio IX Hispana", desc: "An elite Roman legion that completely and mysteriously vanished from all historical records around AD 120." }
+            ],
+            "Science & Physics": [
+                { title: "Double-slit experiment", desc: "The mind-bending demonstration that light and matter exist as probability waves until the moment they are observed." },
+                { title: "False vacuum decay", desc: "A hypothetical, apocalyptic event where the universe instantly transitions to a lower energy state, destroying everything." },
+                { title: "Mpemba effect", desc: "The strange, counterintuitive physics observation that warmer water can sometimes freeze faster than colder water." },
+                { title: "Quantum suicide and immortality", desc: "A thought experiment suggesting you can never die from your own perspective, only branch into universes where you survive." },
+                { title: "Measurement problem", desc: "The unresolved core issue in quantum mechanics of how (or if) observation forces a particle to choose a definitive state." },
+                { title: "Dark flow", desc: "A controversial theoretical non-random movement of galaxy clusters, possibly pulled by mass outside our observable universe." },
+                { title: "Panspermia", desc: "The hypothesis that life exists throughout the Universe, distributed by meteoroids, asteroids, and comets." },
+                { title: "Delayed-choice quantum eraser", desc: "An experiment extending the double-slit setup that seemingly shows choices in the present altering events in the past." },
+                { title: "Holographic principle", desc: "A string theory principle suggesting that all 3D space might just be a projection of data encoded on a 2D boundary." },
+                { title: "Black hole information paradox", desc: "The mathematical conflict between quantum mechanics and general relativity regarding whether information is lost in a black hole." },
+                { title: "Quantum biology", desc: "The emerging study of how delicate quantum phenomena actually play roles in biological processes like photosynthesis and bird navigation." },
+                { title: "Hard problem of consciousness", desc: "The profound problem of explaining how and why physical matter in the brain gives rise to subjective, inner experiences." },
+                { title: "Arrow of time", desc: "The scientific mystery of why time only moves strictly in one direction, deeply linked to the law of entropy." },
+                { title: "De Broglie–Bohm theory", desc: "A deterministic, alternative formulation of quantum physics featuring a non-local hidden 'pilot wave' guiding particles." },
+                { title: "Orchestrated objective reduction", desc: "Penrose and Hameroff's theory linking the origins of consciousness to quantum vibrations inside microtubules in brain neurons." },
+                { title: "One-electron universe", desc: "The wild hypothesis that all electrons in the universe are actually a single electron moving infinitely back and forth through time." },
+                { title: "Great Filter", desc: "The terrifying concept of a highly probable evolutionary barrier that destroys most life before it can become space-faring." },
+                { title: "Quantum Darwinism", desc: "A theory explaining how the messy quantum world turns into the solid classical world through an environment 'selecting' stable states." },
+                { title: "Retrocausality", desc: "A fringe concept in physics where an effect precedes its cause in time, suggesting the future can influence the past." },
+                { title: "Langlands program", desc: "A vast, complex web of far-reaching mathematical conjectures attempting to unify number theory and geometry." }
+            ],
+            "Biology & Nature": [
+                { title: "Tardigrade", desc: "Microscopic 'water bears' famous for their extreme resilience, surviving freezing, radiation, and even the vacuum of space." },
+                { title: "Horizontal gene transfer", desc: "The bizarre transfer of genetic material directly between different species, bypassing traditional parent-to-offspring inheritance." },
+                { title: "Mycorrhizal network", desc: "The 'Wood Wide Web': underground fungal networks linking trees, allowing forests to communicate and share nutrients." },
+                { title: "Quorum sensing", desc: "The ability of bacteria to detect their own population density and coordinate group behaviors, like a hive mind." },
+                { title: "Symbiogenesis", desc: "The evolutionary theory that complex cells (like ours) evolved from ancient, separate bacteria swallowing each other and cooperating." },
+                { title: "Cymothoa exigua", desc: "A nightmare-inducing parasitic crustacean that enters a fish's mouth, destroys its tongue, and physically replaces it." },
+                { title: "Turritopsis dohrnii", desc: "The 'immortal jellyfish', capable of endlessly reverting its cells back to an infant state when stressed or injured." },
+                { title: "Toxoplasma gondii", desc: "A parasite that infects mammal brains, notably altering mouse behavior to make them sexually attracted to the smell of cats." },
+                { title: "Lazarus taxon", desc: "Species that seemingly disappear completely from the fossil record for millions of years, only to be found alive today." },
+                { title: "Cephalopod intelligence", desc: "The remarkable, alien-like intelligence of octopuses, which have distributed nervous systems extending into their arms." },
+                { title: "Physarum polycephalum", desc: "A brainless slime mold capable of complex problem-solving, like navigating mazes and perfectly recreating railway networks." },
+                { title: "Whale fall", desc: "The incredible, localized deep-sea ecosystem that blooms and thrives for decades on the sunken carcass of a massive whale." },
+                { title: "Transgenerational epigenetic inheritance", desc: "The process by which trauma and environmental stress experienced by parents can alter the gene expression of their future children." },
+                { title: "CRISPR", desc: "Originally a primitive bacterial immune system, now harnessed by humans as a revolutionary, precise gene-editing tool." },
+                { title: "Convergent evolution", desc: "The phenomenon where completely unrelated species independently evolve identical traits (e.g., eyes evolved independently 40+ times)." },
+                { title: "Cambrian explosion", desc: "The sudden, relatively brief evolutionary burst 500 million years ago when almost all major animal body plans rapidly appeared." },
+                { title: "Endogenous retrovirus", desc: "Ancient viral DNA that infected our ancestors millions of years ago and became a permanent, integrated part of the human genome." }
+            ],
+            "Sociology & History": [
+                { title: "Cargo cult", desc: "Fascinating religious movements in the Pacific where islanders built mock runways to attract airplanes bearing 'cargo'." },
+                { title: "Emu War", desc: "An actual, slightly ridiculous 1932 military operation in Australia where the army was deployed to fight a massive flock of emus—and lost." },
+                { title: "Defenestrations of Prague", desc: "Historical political incidents involving angry mobs throwing politicians out of castle windows, triggering massive European wars." },
+                { title: "Cadaver Synod", desc: "The macabre event in 897 AD where a dead Pope was dug up, dressed in robes, propped in a chair, and put on trial." },
+                { title: "Phantom time hypothesis", desc: "A conspiracy theory suggesting the Holy Roman Emperor fabricated 300 years of history, meaning the year is actually 1720." },
+                { title: "Great Molasses Flood", desc: "A bizarre 1919 disaster where a giant tank ruptured, sending a 25-foot wave of molasses crashing through Boston at 35 mph." },
+                { title: "Project MKUltra", desc: "The very real, illegal, and highly classified CIA program aimed at developing mind-control and torture techniques during the Cold War." },
+                { title: "Operation Midnight Climax", desc: "A sub-project of MKUltra where the CIA set up safehouses to secretly dose unsuspecting men with LSD and watch through two-way mirrors." },
+                { title: "Kowloon Walled City", desc: "A massive, anarchic, hyper-dense, ungoverned architectural anomaly in Hong Kong that housed 50,000 people before its demolition." },
+                { title: "Centralia mine fire", desc: "A subterranean coal fire that has been burning uncontrollably beneath an evacuated Pennsylvania ghost town since 1962." },
+                { title: "Library of Ashurbanipal", desc: "The oldest surviving royal library in the world, containing ancient Mesopotamian clay tablets, including the Epic of Gilgamesh." },
+                { title: "Linguistic relativity", desc: "The Sapir-Whorf hypothesis suggesting that the specific grammar and vocabulary of your language directly shape how you perceive reality." },
+                { title: "Overview effect", desc: "A profound cognitive and spiritual shift reported by astronauts who experience the reality of seeing Earth suspended in a void." },
+                { title: "Debt: The First 5000 Years", desc: "An anthropological thesis arguing that complex credit and debt systems long predated the invention of coins or barter." },
+                { title: "Ergotism", desc: "Poisoning from a psychoactive fungus on rye, hypothesized to be the real cause behind the Salem witch trials and dancing plagues." },
+                { title: "HyperNormalisation", desc: "Adam Curtis's documentary concept that governments and corporations have built a fake, simplified version of reality to manage society." },
+                { title: "Strauss–Howe generational theory", desc: "A theory asserting that history moves in predictable 80-year cycles driven by generational archetypes." },
+                { title: "McNamara fallacy", desc: "The dangerous logical error of making massive decisions based solely on strictly quantitative metrics while ignoring qualitative reality." },
+                { title: "Goodhart's law", desc: "The sociological principle that 'When a measure becomes a target, it ceases to be a good measure'." },
+                { title: "Campbell's law", desc: "The concept that the more any quantitative metric is used for social decision-making, the more it will be corrupted." },
+                { title: "Puer aeternus", desc: "The Jungian psychological archetype of the 'eternal boy'—an adult who resists growing up, similar to Peter Pan syndrome." },
+                { title: "Fox sisters", desc: "Three 19th-century sisters whose childhood pranks of cracking their toe joints accidentally birthed the massive Spiritualism religion." },
+                { title: "Tulpa", desc: "A concept originating in Tibetan mysticism referring to an entity or being created purely through intense mental concentration and thought." }
+            ],
+            "Math & Logic": [
+                { title: "Gödel's incompleteness theorems", desc: "Two profound math proofs showing that in any complex mathematical system, there are true statements that can never be proven." },
+                { title: "Banach–Tarski paradox", desc: "A theorem proving a solid 3D sphere can theoretically be cut into pieces and reassembled into two identical spheres of the same size." },
+                { title: "Riemann hypothesis", desc: "One of the most important unsolved problems in pure mathematics, dealing with the deeply mysterious distribution of prime numbers." },
+                { title: "Cantor's diagonal argument", desc: "An elegant proof demonstrating that some infinities are actually larger than other infinities." },
+                { title: "Monty Hall problem", desc: "A famously counterintuitive probability puzzle based on a game show with three doors that routinely fools even PhDs." },
+                { title: "Gabriel's Horn", desc: "A bizarre geometric figure that has an infinite surface area, yet contains a finite volume." },
+                { title: "Collatz conjecture", desc: "A simple, unsolved math sequence: if even, halve it; if odd, triple it and add 1. Does it always reach 1? No one knows." },
+                { title: "Benford's law", desc: "The strange observation that in naturally occurring numerical data, the number 1 appears as the leading digit almost 30% of the time." },
+                { title: "Rule 110", desc: "An incredibly simple cellular automaton rule that is capable of universal computation, like a tiny grid-based computer." },
+                { title: "Coastline paradox", desc: "The counterintuitive observation that a landmass's coastline does not have a defined length; it depends entirely on the scale of measurement." },
+                { title: "Hilbert's paradox of the Grand Hotel", desc: "A thought experiment showing how a completely full hotel with infinite rooms can still accommodate an infinite number of new guests." },
+                { title: "Four color theorem", desc: "The theorem, famously requiring a computer to prove, stating that any 2D map requires no more than four colors to separate adjacent regions." },
+                { title: "Birthday problem", desc: "The probability paradox demonstrating that in a group of just 23 people, there's a 50% chance two of them share a birthday." },
+                { title: "Zeno's paradoxes", desc: "Ancient philosophical puzzles trying to prove that motion is an illusion, mostly resolved by modern calculus and limits." },
+                { title: "Ramsey theory", desc: "A branch of mathematics focused on the concept that complete disorder is impossible; massive structures inevitably contain ordered substructures." }
+            ],
+            "Technology": [
+                { title: "Roko's basilisk", desc: "A notorious internet thought experiment about a future superintelligent AI that retroactively punishes those who didn't assist its creation." },
+                { title: "Dead Internet theory", desc: "A modern conspiracy theory suggesting that most of the internet is no longer humans, but AI bots interacting with other bots." },
+                { title: "Kessler syndrome", desc: "A catastrophic scenario where the density of orbital debris triggers an unstoppable cascade of collisions, locking us on Earth." },
+                { title: "Jevons paradox", desc: "The economic principle that increasing the efficiency of a resource doesn't save it; it just increases the rate of consumption." },
+                { title: "Moravec's paradox", desc: "The observation that complex logic is easy for AI, but simple toddler-level motor skills are incredibly difficult to program." },
+                { title: "Instrumental convergence", desc: "The danger that a superintelligent AI might pursue harmless goals (like making paperclips) in highly destructive ways to ensure its success." },
+                { title: "Surveillance capitalism", desc: "The modern economic model centered entirely around the massive extraction, prediction, and commodification of personal human data." },
+                { title: "Lindy effect", desc: "A theory proposing that the future life expectancy of non-perishable things (like ideas or books) is proportional to their current age." },
+                { title: "Metamaterial cloaking", desc: "The scientific use of artificially structured materials to bend light and electromagnetic waves around an object, making it technically invisible." },
+                { title: "Digital dark age", desc: "The threat that future generations won't be able to read our history due to outdated hardware, software rot, and obsolete file formats." },
+                { title: "Steganography", desc: "The ancient and modern practice of secretly concealing a hidden message, image, or file entirely within another innocuous file." },
+                { title: "Self-replicating spacecraft", desc: "The concept of autonomous 'Von Neumann probes' sent to other stars, capable of mining resources to build exact copies of themselves." }
+            ],
+            "Cryptids & Folklore": [
+                { title: "The Beast of Gévaudan", desc: "A historical man-eating animal or pack of animals that terrorized a French province in the 1760s." },
+                { title: "The Mothman of Point Pleasant", desc: "A winged humanoid with glowing red eyes reportedly seen in West Virginia before a tragic bridge collapse in 1967." },
+                { title: "The Flatwoods Monster", desc: "A purported extraterrestrial or cryptid sighted in a West Virginia town in 1952 after a UFO crash." },
+                { title: "Hopkinsville Goblins", desc: "Extraterrestrial-like creatures reportedly involved in an infamous 1955 farmhouse siege in Kentucky." },
+                { title: "Loveland Frog", desc: "A legendary humanoid frog-like creature said to roam the riversides of Ohio." },
+                { title: "The Jersey Devil", desc: "A mythical creature with hooves, a horse's head, and bat wings said to inhabit the Pine Barrens of New Jersey." },
+                { title: "El Chupacabra", desc: "A folklore entity from the Americas notorious for allegedly draining the blood of livestock, particularly goats." },
+                { title: "Mokele-mbembe", desc: "A cryptid resembling a sauropod dinosaur rumored to live in the Congo River basin." },
+                { title: "The Mongolian Death Worm", desc: "A legendary, highly venomous giant worm believed to burrow beneath the Gobi Desert." },
+                { title: "Spring-heeled Jack", desc: "A Victorian-era English folklore entity known for his terrifying appearance and astonishing leaps." },
+                { title: "The Wendigo", desc: "A mythological flesh-eating spirit of Algonquin folklore associated with winter, starvation, and cannibalism." },
+                { title: "Skinwalker Ranch", desc: "A property in Utah famous for dense reports of UFOs, poltergeist activity, and cryptid sightings." },
+                { title: "The Australian Bunyip", desc: "A large mythical creature from Aboriginal mythology said to lurk in swamps, billabongs, and creeks." },
+                { title: "The Ningen", desc: "A modern urban legend about massive, blubber-covered humanoid creatures living in the icy waters of Antarctica." },
+                { title: "Thunderbird sightings", desc: "Reports of cryptid birds of enormous size, rooted in North American Indigenous mythology." },
+                { title: "Black Shuck and hellhounds", desc: "Ghostly black dogs of English folklore said to roam the coastline and countryside as omens of death." },
+                { title: "The Dobhar-chú", desc: "An aggressive, mythical Irish creature resembling a cross between a dog and an otter." },
+                { title: "Tatzelwurm of the Alps", desc: "A stubby, lizard-like cryptid with the face of a cat, rumored to inhabit the European Alps." },
+                { title: "The Ahool", desc: "A flying cryptid from Indonesia rumored to have the head of a monkey and the wingspan of a small airplane." }
+            ],
+            "Strange Artifacts": [
+                { title: "The Baghdad Battery", desc: "Terracotta pots from ancient Mesopotamia containing copper and iron, hypothesized by some to be early galvanic cells." },
+                { title: "Derinkuyu underground city", desc: "A massive, ancient multi-level subterranean city in Turkey capable of sheltering 20,000 people." },
+                { title: "Puma Punku's precision stonework", desc: "An ancient Andean archaeological site in Bolivia famous for its massive, incredibly precisely cut stone blocks." },
+                { title: "Nan Madol", desc: "A ruined city constructed on artificial islands off the coast of Micronesia using massive basalt logs." },
+                { title: "Great Zimbabwe", desc: "An ancient, ruined city in southeastern Africa featuring massive stone walls constructed without mortar." },
+                { title: "Chand Baori stepwell", desc: "One of the deepest and largest stepwells in India, featuring 3,500 narrow steps over 13 stories." },
+                { title: "The Oera Linda Book", desc: "A controversial Frisian manuscript detailing mythological, historical, and religious themes, widely considered a 19th-century hoax." },
+                { title: "The Piri Reis map", desc: "A 1513 world map by an Ottoman admiral that shows surprisingly accurate geographical details, sparking various fringe theories." },
+                { title: "The Dropa Stones", desc: "Supposed ancient stone discs found in a Tibetan cave alleged to contain alien hieroglyphics, widely regarded as a hoax." },
+                { title: "Ica Stones", desc: "Andesite stones found in Peru bearing controversial carvings of dinosaurs and advanced technology, generally classified as modern forgeries." },
+                { title: "Acámbaro figures", desc: "Thousands of clay figurines found in Mexico resembling dinosaurs, determined by archaeologists to be modern hoaxes." },
+                { title: "Tecaxic-Calixtlahuaca head", desc: "A terracotta head of Roman appearance found in a pre-Columbian burial site in Mexico, raising questions of pre-Hispanic trans-oceanic contact." },
+                { title: "The Kensington Runestone", desc: "A controversial stone slab found in Minnesota covered in runes, suggesting a 14th-century Scandinavian expedition to North America." },
+                { title: "The Shugborough inscription", desc: "A sequence of letters carved on an 18th-century monument in England that remains one of the world's top unsolved ciphers." },
+                { title: "The Georgia Guidestones", desc: "A mysterious granite monument erected in 1980 outlining 'commandments' for a post-apocalyptic age, destroyed by a bombing in 2022." },
+                { title: "Coral Castle's construction", desc: "A stone structure created by a single eccentric Latvian-American man in Florida who claimed to know the secrets of the pyramids." },
+                { title: "Tarrare", desc: "An 18th-century French showman and soldier noted for his unusual eating habits and bottomless, horrific appetite." },
+                { title: "Charles Domery", desc: "A Polish soldier serving in the Prussian and French armies who shared Tarrare's terrifying compulsion to eat constantly." },
+                { title: "Kaspar Hauser's mysterious life", desc: "A 19th-century German youth who claimed to have grown up in total isolation in a dark cell, sparking wild rumors about his royal ancestry." },
+                { title: "The Man in the Iron Mask", desc: "An unidentified prisoner of state during the reign of King Louis XIV of France whose face was hidden by a velvet cloth (later romanticized as iron)." }
+            ],
+            "Lost Worlds & Geography": [
+                { title: "The Lost City of Z", desc: "An indigenous city believed by British explorer Percy Fawcett to exist in the jungle of the Mato Grosso region of Brazil." },
+                { title: "The Kingdom of Saguenay", desc: "A legendary kingdom of blonde, wealthy men rumored by the Iroquoian people to exist in northern Canada during French colonization." },
+                { title: "Sandy Island", desc: "An island that appeared on world maps for over a century before a 2012 expedition proved it didn't exist." },
+                { title: "Lemuria", desc: "A hypothetical sunken continent proposed in the 19th century to explain the distribution of lemurs across the Indian Ocean." },
+                { title: "Hy-Brasil", desc: "A phantom island said to lie off the west coast of Ireland, shrouded in mist except for one day every seven years." },
+                { title: "Agartha and Hollow Earth theory", desc: "A legendary kingdom that is said to be located on the inner surface of the Earth, accessible via polar portals." },
+                { title: "The Caleuche ghost ship", desc: "A mythical ghost ship of Chilote mythology that endlessly navigates the seas around Chiloé Island, Chile at night." },
+                { title: "Tree of Ténéré", desc: "A solitary acacia that was the only tree for 400 kilometers in the Sahara, until it was hit by a drunk driver in 1973." },
+                { title: "Pando", desc: "A massive colony of quaking aspen in Utah that is genetically identical and shares a single root system, making it one of the world's oldest and heaviest living organisms." },
+                { title: "Methuselah pine tree", desc: "A Great Basin bristlecone pine in California that is over 4,800 years old, one of the oldest known non-clonal living trees." },
+                { title: "Blood Falls of Antarctica", desc: "An outflow of an iron-oxide tainted plume of saltwater flowing from the tongue of the Taylor Glacier." },
+                { title: "Giant's Causeway", desc: "An area of about 40,000 interlocking basalt columns in Northern Ireland, the result of an ancient volcanic fissure eruption." },
+                { title: "The Richat Structure", desc: "A deeply eroded, highly symmetrical geological dome in the Sahara Desert that looks like a giant bullseye from space." },
+                { title: "Darvaza gas crater", desc: "A collapsed natural gas crater in Turkmenistan that has been intentionally burning since the early 1970s to prevent the spread of methane gas." }
+            ],
+            "Crimes & Ciphers": [
+                { title: "D.B. Cooper's hijacking", desc: "The unsolved 1971 case of a man who hijacked a Boeing 727, extorted $200,000, and parachuted into the night, never to be seen again." },
+                { title: "Isabella Stewart Gardner Museum theft", desc: "The largest unsolved art heist in history, where $500 million worth of art was stolen in Boston in 1990." },
+                { title: "The Max Headroom signal hijacking", desc: "An unsolved 1987 television signal intrusion in Chicago featuring a person wearing a Max Headroom mask." },
+                { title: "Captain Midnight broadcast intrusion", desc: "A 1986 satellite television signal hijacking by a disgruntled satellite dish owner protesting HBO's scrambled feeds." },
+                { title: "Southern Television broadcast interruption", desc: "A 1977 British TV broadcast hijacking where an audio message claiming to be from an alien named 'Vrillon' was transmitted." },
+                { title: "The Bloop audio anomaly", desc: "An ultra-low-frequency and extremely powerful underwater sound detected in 1997, later theorized to be an icequake." },
+                { title: "The Julia audio anomaly", desc: "A sound recorded in 1999 by the NOAA that sounded like a person cooing, likely caused by an iceberg running aground." },
+                { title: "The 52-hertz whale", desc: "An individual whale of unidentified species which calls at an unusually high frequency of 52 Hz, seemingly unable to communicate with others." },
+                { title: "Echelon surveillance program", desc: "A secretive global surveillance and signals intelligence network operated by the Five Eyes intelligence alliance." },
+                { title: "The Conet Project and numbers stations", desc: "Shortwave radio stations of uncertain origin that broadcast formatted numbers, believed to be intelligence agencies communicating with spies." },
+                { title: "The Beale ciphers", desc: "A set of three ciphertexts that allegedly state the location of buried treasure worth millions, of which only one has been decoded." },
+                { title: "The Dorabella cipher", desc: "An unsolved cryptogram written by composer Edward Elgar to his friend Dora Penny in 1897." },
+                { title: "The Copiale cipher", desc: "A 105-page encrypted manuscript containing the rituals and political leanings of an 18th-century German secret society, decoded in 2011." },
+                { title: "The Kryptos sculpture", desc: "A cryptographic puzzle monument containing four encrypted messages, three of which have been solved, with the final remaining a famous mystery." },
+                { title: "The Greenbrier Ghost", desc: "An 1897 American murder trial where the victim's ghost purportedly helped secure her husband's conviction." },
+                { title: "Gloomy Sunday", desc: "A 1933 song urban legend claims is cursed due to its alleged association with a spike in suicides." },
+                { title: "The Rendlesham Forest incident", desc: "A series of reported sightings of unexplained lights near RAF bases in England in 1980, often dubbed 'Britain's Roswell'." },
+                { title: "The Kecksburg UFO incident", desc: "A 1965 event where a fireball crashed in Pennsylvania, with locals reporting military recovery of a bell-shaped object." }
+            ],
+            "Natural Phenomena": [
+                { title: "Catatumbo lightning", desc: "An atmospheric phenomenon in Venezuela where lightning storms occur for up to 160 days a year, 10 hours a day." },
+                { title: "Naga fireballs", desc: "Glowing reddish balls alleged to naturally rise from the Mekong River in Thailand and Laos." },
+                { title: "Sprite lightning", desc: "Large-scale electrical discharges that occur high above thunderstorm clouds, taking shapes like jellyfish or carrots." },
+                { title: "Ball lightning theories", desc: "An unexplained and rare electrical phenomenon described as luminous, spherical objects that vary from pea-sized to several meters in diameter." },
+                { title: "Earthquake lights", desc: "A rare luminous aerial phenomenon that reportedly appears in the sky at or near areas of tectonic stress, seismic activity, or volcanic eruptions." },
+                { title: "St. Elmo's fire", desc: "A weather phenomenon involving a gap-less electrical plasma discharge around pointed objects in strong atmospheric electrical fields." },
+                { title: "Fata Morgana mirages", desc: "A complex form of superior mirage that significantly distorts objects, making ships appear as if they are floating in the sky." },
+                { title: "The Brocken spectre", desc: "The magnified, rainbow-haloed shadow of an observer cast upon clouds opposite the sun, common on high mountain peaks." },
+                { title: "Sun dogs", desc: "An atmospheric optical phenomenon that consists of a bright spot to one or both sides of the Sun, caused by ice crystals." },
+                { title: "Moonbows", desc: "A rare rainbow produced by moonlight rather than direct sunlight." },
+                { title: "Foxfire", desc: "The bioluminescence created by some species of fungi present in decaying wood." },
+                { title: "Fairy rings and mycelium networks", desc: "Naturally occurring rings or arcs of mushrooms caused by the radial growth of underground fungal networks." },
+                { title: "Singing sand dunes", desc: "Sand dunes that produce a low-frequency hum or booming sound due to wind passing over dry grains." },
+                { title: "Sailing stones of Death Valley", desc: "A geological phenomenon where rocks move and inscribe long tracks along a smooth valley floor without human or animal intervention." },
+                { title: "Devil's Kettle waterfall anomaly", desc: "A waterfall in Minnesota where half the river drops into a pothole and seemingly disappears; hydrologists recently proved it merges back underground." },
+                { title: "Spotted Lake", desc: "A saline endorheic alkali lake in British Columbia that evaporates in summer, leaving large, colorful mineral spots." },
+                { title: "Lake Natron", desc: "A highly alkaline salt lake in Tanzania that calcifies the bodies of animals that die in its waters." },
+                { title: "Klerksdorp spheres", desc: "Naturally occurring, spherical concretions found in South Africa that look man-made, often co-opted by ancient alien theorists." }
+            ],
+            "Evolution & Deep Time": [
+                { title: "The Pitch drop experiment", desc: "The world's longest-running laboratory experiment, demonstrating the extreme high viscosity of pitch by letting it drip over decades." },
+                { title: "The Oxford Electric Bell", desc: "An experimental electric bell set up in 1840 that has been ringing nearly continuously, powered by one of the first dry pile batteries." },
+                { title: "The Clock of the Long Now", desc: "A proposed mechanical clock designed to keep time for 10,000 years, encouraging long-term thinking." },
+                { title: "The Svalbard Global Seed Vault", desc: "A secure seed bank on a Norwegian island near the North Pole designed to preserve the world's crop diversity against global crises." },
+                { title: "The Doomsday Clock", desc: "A symbol representing the likelihood of a man-made global catastrophe, maintained since 1947 by the Bulletin of the Atomic Scientists." },
+                { title: "The K-T extinction event", desc: "The sudden mass extinction of three-quarters of the plant and animal species on Earth, including non-avian dinosaurs, 66 million years ago." },
+                { title: "The Great Oxidation Event", desc: "A time period when the Earth's atmosphere and shallow oceans first experienced a rise in oxygen, introduced by cyanobacteria." },
+                { title: "The Snowball Earth hypothesis", desc: "The theory that the Earth's surface became entirely or nearly entirely frozen at least once during its history." },
+                { title: "Pangaea Ultima", desc: "A possible future supercontinent configuration that could form in 250 million years as tectonic plates drift." },
+                { title: "Milankovitch cycles", desc: "Long-term variations in the Earth's orbit, axial tilt, and precession that drive cyclical climate changes and ice ages." },
+                { title: "The Carrington Event", desc: "The most intense geomagnetic storm in recorded history, which caused telegraph systems to spark and ignite fires in 1859." },
+                { title: "The Year Without a Summer", desc: "A severe climate anomaly in 1816 caused by the eruption of Mount Tambora, leading to global cooling, crop failures, and famine." },
+                { title: "The Little Ice Age", desc: "A period of regional cooling, particularly in the North Atlantic, that occurred roughly between the 14th and 19th centuries." },
+                { title: "The Medieval Warm Period", desc: "A time of relatively warm climate in the North Atlantic region lasting from about c. 950 to c. 1250." },
+                { title: "Younger Dryas impact hypothesis", desc: "A controversial theory suggesting that a comet or asteroid impact caused a severe return to glacial conditions 12,900 years ago." },
+                { title: "Clovis First theory vs. pre-Clovis", desc: "The evolving debate in archaeology regarding whether the Clovis culture was truly the first human population in the Americas." },
+                { title: "The Solutrean hypothesis", desc: "A heavily criticized hypothesis suggesting that people from Stone Age Europe migrated to the Americas, pre-dating Indigenous peoples." },
+                { title: "The Denisovans", desc: "An extinct species or subspecies of archaic humans that ranged across Asia, identified primarily by DNA extracted from fragments of bone." },
+                { title: "Homo floresiensis", desc: "An extinct species of small archaic human discovered on the Indonesian island of Flores, sometimes called 'hobbits'." },
+                { title: "Multiregional hypothesis", desc: "A scientific model proposing that human evolution occurred across multiple continents simultaneously from Homo erectus." },
+                { title: "The Aquatic ape hypothesis", desc: "A fringe evolutionary theory suggesting early human ancestors lived in a semi-aquatic environment, explaining our lack of fur and bipedalism." },
+                { title: "The Biophilia hypothesis", desc: "The idea that humans possess an innate tendency to seek connections with nature and other forms of life." },
+                { title: "The Gaia hypothesis", desc: "A paradigm proposing that living organisms interact with their inorganic surroundings on Earth to form a synergistic, self-regulating complex system." },
+                { title: "The Medea hypothesis", desc: "A theory opposing the Gaia hypothesis, suggesting that multicellular life is ultimately suicidal and doomed to destroy itself and the biosphere." }
+            ],
+            "Astrobiology": [
+                { title: "The Dark Forest hypothesis", desc: "A solution to the Fermi Paradox suggesting civilizations remain silent and hidden to avoid being destroyed by hostile, predatory alien species." },
+                { title: "The Zoo hypothesis", desc: "The theory that advanced aliens are aware of Earth but are avoiding contact to allow for our natural evolution and sociocultural development." },
+                { title: "The Rare Earth hypothesis", desc: "The argument that the emergence of complex multicellular life requires an improbable combination of astrophysical and geological events." },
+                { title: "The Transcension hypothesis", desc: "The idea that sufficiently advanced civilizations inevitably leave our universe by shrinking themselves into optimized, black-hole-like states." },
+                { title: "The Planetarium hypothesis", desc: "The philosophical theory that our perceived universe is an engineered illusion or simulation designed by advanced beings." },
+                { title: "The Drake equation", desc: "A probabilistic argument used to estimate the number of active, communicative extraterrestrial civilizations in the Milky Way galaxy." },
+                { title: "The Kardashev scale", desc: "A method of measuring a civilization's level of technological advancement based on the amount of energy they are able to use." },
+                { title: "Project Blue Book", desc: "The United States Air Force's systematic study of unidentified flying objects (UFOs) spanning from 1952 to 1969." }
+            ],
+            "Futurism & Society": [
+                { title: "Dyson spheres and swarms", desc: "Hypothetical megastructures that completely encompass a star to capture a large percentage of its power output." },
+                { title: "Matrioshka brains", desc: "Proposed megastructures based on the Dyson sphere, utilizing the energy of a star to drive massive computational capacity." },
+                { title: "Shkadov thrusters", desc: "Hypothetical megastructures built around a star to harness its radiation pressure and move the entire solar system through the galaxy." },
+                { title: "O'Neill cylinders", desc: "A space settlement concept consisting of two massive, counter-rotating cylinders providing artificial gravity via centrifugal force." },
+                { title: "Stanford torus", desc: "A proposed design for a space habitat consisting of a large, rotating, donut-shaped ring capable of housing thousands." },
+                { title: "Bernal sphere", desc: "A type of space habitat design intended as a long-term residential area, spherical in shape to maintain air pressure efficiently." },
+                { title: "Space elevators", desc: "A proposed Earth-to-space transportation system using a cable anchored to the equator and extending into space." },
+                { title: "Skyhooks and momentum tethers", desc: "Rotating space tethers that could catch payloads in the upper atmosphere and fling them into higher orbits." },
+                { title: "Orbital rings", desc: "A concept for an artificial ring placed around the Earth that rotates at orbital speed, from which space elevators could drop down." },
+                { title: "Alderson disks", desc: "A theoretical megastructure shaped like an enormous CD with a star at its center, providing immense habitable surface area." },
+                { title: "Technological singularity", desc: "A hypothetical future point where technological growth becomes uncontrollable and irreversible, resulting in unfathomable changes to human civilization." },
+                { title: "Mind uploading", desc: "The theoretical process of scanning a physical structure of a brain and transferring the conscious mind into a digital medium." },
+                { title: "Cryonics and neuropreservation", desc: "The low-temperature freezing of a human corpse or severed head, with the hope that resurrection may be possible in the future." },
+                { title: "Life extension", desc: "The scientific pursuit of slowing down or reversing the aging processes to drastically increase human lifespans." },
+                { title: "De-extinction", desc: "The process of creating an organism, which is either a member of, or closely resembles, an extinct species like the woolly mammoth." },
+                { title: "Terraforming", desc: "The hypothetical process of deliberately modifying the atmosphere, temperature, or ecology of a planet to make it Earth-like." },
+                { title: "Seasteading and ocean colonization", desc: "The concept of creating permanent dwellings at sea, outside the territory claimed by any government." },
+                { title: "Arcologies", desc: "Massive, highly dense architectural structures designed to reduce human environmental impact by combining city resources into a single building." },
+                { title: "The Venus Project", desc: "An organization proposing a cybernated socioeconomic system called a 'resource-based economy,' relying on total automation rather than money." },
+                { title: "The Zeitgeist Movement", desc: "A grassroots movement advocating for a shift away from a money-based socioeconomic system toward a resource-based, sustainable model." },
+                { title: "The Technocracy movement", desc: "A social movement that advocates for replacing politicians with scientists and engineers to manage the economy and resources." },
+                { title: "Cybernetics and human augmentation", desc: "The integration of technological enhancements into the human body to restore or vastly improve physiological and cognitive functions." },
+                { title: "Bionics and prosthetic advancement", desc: "The application of biological methods and systems found in nature to the study and design of engineering systems and modern technology." },
+                { title: "Solarpunk aesthetics and philosophy", desc: "A literary and artistic movement that envisions and works toward realizing a sustainable future interconnected with nature and community." },
+                { title: "Steampunk history and origins", desc: "A retro-futuristic subgenre of science fiction that incorporates technology and aesthetic designs inspired by 19th-century industrial steam-powered machinery." },
+                { title: "Cyberpunk culture and literature", desc: "A subgenre of science fiction set in a dystopian, high-tech future characterized by 'high tech and low life'." },
+                { title: "HAARP conspiracies", desc: "Fringe theories surrounding a legitimate ionospheric research program in Alaska, often wrongfully blamed for weather manipulation and mind control." },
+                { title: "Operation Northwoods", desc: "A genuine, declassified Cold War-era proposal where the CIA drafted plans to commit false flag terrorism against Americans to justify a war with Cuba." },
+                { title: "Generational ships and interstellar travel", desc: "Hypothetical starships that travel at sub-light speeds, meaning the original occupants will die, leaving their descendants to reach the destination." },
+                { title: "The AI Alignment Problem", desc: "The challenge in artificial intelligence safety research to ensure that artificial superintelligence shares and acts according to human values." },
+                { title: "Post-scarcity economics", desc: "A hypothetical economic system where goods, services, and information are universally accessible and virtually free due to advanced automation." }
+            ]
+        };
+
+        // Icons mapping for categories
+        const categoryIcons = {
+            "General": "globe",
+            "Philosophy": "brain-circuit",
+            "Psychology": "brain",
+            "Unsolved Mysteries": "search-code",
+            "Science & Physics": "atom",
+            "Biology & Nature": "leaf",
+            "Sociology & History": "landmark",
+            "Math & Logic": "calculator",
+            "Technology": "cpu",
+            // New Categories
+            "Cryptids & Folklore": "ghost",
+            "Strange Artifacts": "gem",
+            "Lost Worlds & Geography": "map",
+            "Crimes & Ciphers": "fingerprint",
+            "Natural Phenomena": "cloud-lightning",
+            "Evolution & Deep Time": "hourglass",
+            "Astrobiology": "telescope",
+            "Futurism & Society": "satellite"
+        };
+
+        let currentCategory = 'All';
+        let allTopicsList = [];
+
+        // Flatten database for 'All' view and search
+        for (const [cat, items] of Object.entries(database)) {
+            items.forEach(item => {
+                allTopicsList.push({ 
+                    title: item.title, 
+                    desc: item.desc, 
+                    category: cat 
+                });
+            });
+        }
+
+        // --- Application Logic ---
+
+        // Initialize App
+        function init() {
+            renderSidebar();
+            renderGrid(allTopicsList);
+            lucide.createIcons();
+
+            // Search Listener
+            document.getElementById('search-input').addEventListener('input', (e) => {
+                handleSearch(e.target.value);
+            });
+        }
+
+        // Sidebar rendering
+        function renderSidebar() {
+            const nav = document.getElementById('category-nav');
+            
+            // 'All' button
+            const allBtn = createNavButton('All', 'layout-grid', currentCategory === 'All');
+            allBtn.onclick = () => selectCategory('All');
+            nav.appendChild(allBtn);
+
+            // Category buttons
+            for (const category in database) {
+                const btn = createNavButton(category, categoryIcons[category] || 'folder', currentCategory === category);
+                btn.onclick = () => selectCategory(category);
+                nav.appendChild(btn);
+            }
+        }
+
+        function createNavButton(label, iconName, isActive) {
+            const btn = document.createElement('button');
+            btn.className = `w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors text-sm font-medium ${
+                isActive 
+                ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' 
+                : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200'
+            }`;
+            
+            btn.innerHTML = `
+                <i data-lucide="${iconName}" class="w-4 h-4 ${isActive ? 'text-indigo-400' : 'text-gray-500'}"></i>
+                <span class="truncate">${label}</span>
+                <span class="ml-auto text-xs bg-gray-800 px-2 py-0.5 rounded-full text-gray-500">
+                    ${label === 'All' ? allTopicsList.length : database[label].length}
+                </span>
+            `;
+            return btn;
+        }
+
+        function selectCategory(category) {
+            currentCategory = category;
+            document.getElementById('current-category-title').textContent = category === 'All' ? 'All Topics' : category;
+            
+            // Update active state in sidebar
+            document.getElementById('category-nav').innerHTML = '';
+            renderSidebar();
+            lucide.createIcons();
+            
+            // Clear search
+            document.getElementById('search-input').value = '';
+
+            // Filter data
+            if (category === 'All') {
+                renderGrid(allTopicsList);
+            } else {
+                const filtered = database[category].map(item => ({ title: item.title, desc: item.desc, category: category }));
+                renderGrid(filtered);
+            }
+
+            // Close sidebar on mobile
+            if (window.innerWidth < 768) {
+                toggleSidebar();
+            }
+            
+            // Scroll to top
+            document.getElementById('main-scroll-area').scrollTop = 0;
+        }
+
+        function handleSearch(query) {
+            query = query.toLowerCase();
+            let sourceData = currentCategory === 'All' 
+                ? allTopicsList 
+                : database[currentCategory].map(item => ({ title: item.title, desc: item.desc, category: currentCategory }));
+            
+            // Search by title OR description
+            const filtered = sourceData.filter(item => 
+                item.title.toLowerCase().includes(query) || 
+                item.desc.toLowerCase().includes(query)
+            );
+            
+            if (query.trim() !== '') {
+                document.getElementById('current-category-title').textContent = `Search: "${query}"`;
+            } else {
+                document.getElementById('current-category-title').textContent = currentCategory === 'All' ? 'All Topics' : currentCategory;
+            }
+
+            renderGrid(filtered);
+        }
+
+        // Render Grid of Cards
+        function renderGrid(items) {
+            const grid = document.getElementById('topics-grid');
+            const noResults = document.getElementById('no-results');
+            
+            grid.innerHTML = '';
+            
+            if (items.length === 0) {
+                grid.classList.add('hidden');
+                noResults.classList.remove('hidden');
+                noResults.style.display = 'flex';
+                return;
+            }
+            
+            grid.classList.remove('hidden');
+            noResults.classList.add('hidden');
+            noResults.style.display = 'none';
+
+            items.forEach((item, index) => {
+                const card = document.createElement('div');
+                card.className = 'topic-card bg-gray-800/50 border border-gray-700 rounded-xl p-5 cursor-pointer flex flex-col justify-between group h-full';
+                card.onclick = () => openModal(item.title);
+                
+                // Slight animation delay for staggered entrance
+                card.style.animation = `fadeIn 0.3s ease-out ${index * 0.015}s both`; // Sped up slightly for large lists
+
+                card.innerHTML = `
+                    <div class="flex-1 flex flex-col">
+                        <div class="text-xs font-semibold tracking-wider text-indigo-400 mb-2 uppercase flex items-center gap-1.5">
+                            <i data-lucide="${categoryIcons[item.category] || 'folder'}" class="w-3 h-3"></i>
+                            ${item.category}
+                        </div>
+                        <h3 class="text-lg font-medium text-gray-100 group-hover:text-white leading-snug">${item.title}</h3>
+                        <p class="text-sm text-gray-400 mt-2 line-clamp-3 leading-relaxed flex-1">${item.desc}</p>
+                    </div>
+                    <div class="mt-4 pt-4 border-t border-gray-700/50 flex items-center text-sm font-medium text-gray-500 group-hover:text-indigo-400 transition-colors">
+                        <span>Research deeper</span>
+                        <i data-lucide="arrow-right" class="w-4 h-4 ml-1 transform group-hover:translate-x-1 transition-transform"></i>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+            lucide.createIcons();
+        }
+
+        // Mobile Sidebar Toggle
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const backdrop = document.getElementById('mobile-backdrop');
+            
+            if (sidebar.classList.contains('-translate-x-full')) {
+                sidebar.classList.remove('-translate-x-full');
+                backdrop.classList.remove('hidden');
+            } else {
+                sidebar.classList.add('-translate-x-full');
+                backdrop.classList.add('hidden');
+            }
+        }
+
+        // Random Topic functionality
+        function getRandomTopic() {
+            const randomIndex = Math.floor(Math.random() * allTopicsList.length);
+            const randomTopic = allTopicsList[randomIndex];
+            openModal(randomTopic.title);
+        }
+
+        // --- Wikipedia API Integration & Modal ---
+        
+        async function openModal(title) {
+            const modal = document.getElementById('info-modal');
+            const titleEl = document.getElementById('modal-title');
+            const loadingEl = document.getElementById('modal-loading');
+            const contentArea = document.getElementById('modal-content-area');
+            const descEl = document.getElementById('modal-description');
+            const errorEl = document.getElementById('modal-error');
+            const linkEl = document.getElementById('modal-link');
+            
+            // Reset state
+            titleEl.textContent = title;
+            loadingEl.classList.remove('hidden');
+            contentArea.classList.add('hidden');
+            errorEl.classList.add('hidden');
+            modal.classList.remove('hidden');
+            
+            // Build fallback generic search link immediately
+            const searchUrl = `https://en.wikipedia.org/wiki/Special:Search?search=${encodeURIComponent(title)}`;
+            linkEl.href = searchUrl;
+
+            // Fetch Data
+            try {
+                // Using the Wikipedia Action API for a reliable search + extract combo
+                const apiUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts&exchars=800&exintro=1&explaintext=1&generator=search&gsrsearch=${encodeURIComponent(title)}&gsrlimit=1&origin=*`;
+                
+                const response = await fetch(apiUrl);
+                const data = await response.json();
+                
+                loadingEl.classList.add('hidden');
+
+                if (data.query && data.query.pages) {
+                    const pages = data.query.pages;
+                    const pageId = Object.keys(pages)[0];
+                    const pageData = pages[pageId];
+                    
+                    if (pageData.extract) {
+                        // Found a summary
+                        descEl.textContent = pageData.extract;
+                        linkEl.href = `https://en.wikipedia.org/wiki/${encodeURIComponent(pageData.title)}`;
+                        contentArea.classList.remove('hidden');
+                    } else {
+                        throw new Error("No extract found");
+                    }
+                } else {
+                    throw new Error("No pages found");
+                }
+            } catch (error) {
+                console.error("Wiki Fetch Error:", error);
+                loadingEl.classList.add('hidden');
+                errorEl.classList.remove('hidden');
+            }
+        }
+
+        function closeModal() {
+            const modal = document.getElementById('info-modal');
+            modal.classList.add('hidden');
+        }
+
+        // Close modal on Escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                closeModal();
+            }
+        });
+
+        // Run Init on Load
+        window.onload = init;
+    </script>
+</body>
+</html>
